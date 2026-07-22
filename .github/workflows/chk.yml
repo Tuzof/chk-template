@@ -1,19 +1,22 @@
-name: Chk Runner
+name: CHK Runner
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       target_list:
-        description: 'Lista de targets (um por linha)'
+        description: 'Lista de targets (um por linha: card|mes|ano|cvv)'
         required: true
         type: string
       threads:
         description: 'Threads paralelas'
         required: false
-        default: '50'
+        default: '10'
         type: string
+      saldo:
+        description: 'Verificar saldo (não implementado)'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   chk:
@@ -38,48 +41,44 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          # Se for Node.js: npm ci
-          # Se for Go: go mod download
+          pip install -r requirements.txt
 
-      - name: Prepare targets
+      - name: Prepare targets file
         run: |
           echo "${{ github.event.inputs.target_list }}" > targets.txt
           echo "Targets carregados: $(wc -l < targets.txt)"
 
-      - name: Run chk
+      - name: Run CHK
         env:
           THREADS: ${{ github.event.inputs.threads }}
+          WEBHOOK_PROXY: ${{ secrets.WEBHOOK_PROXY }}
+          CIELO_KEYS: ${{ secrets.CIELO_KEYS }}
         run: |
-          # ADAPTE ESTE COMANDO PARA SEU CHK
-          # Python:
-          python chk.py -t targets.txt -th $THREADS
-          # Node.js:
-          # node chk.js targets.txt $THREADS
-          # Go (compilado):
-          # ./chk -targets targets.txt -threads $THREADS
-          # Go (source):
-          # go run . -targets targets.txt -threads $THREADS
+          python chk.py -t targets.txt -th $THREADS -o results.txt
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: chk-results
           path: |
-            results/
-            *.txt
-            *.json
-            *.csv
+            results.txt
+            *.html
+            *.log
           retention-days: 7
 
       - name: Show summary
         run: |
-          echo "## Chk Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## CHK Summary" >> $GITHUB_STEP_SUMMARY
           echo "**Targets:** $(wc -l < targets.txt)" >> $GITHUB_STEP_SUMMARY
           echo "**Threads:** ${{ github.event.inputs.threads }}" >> $GITHUB_STEP_SUMMARY
-          if [ -d results ]; then
-            echo "**Arquivos de resultado:**" >> $GITHUB_STEP_SUMMARY
-            ls -la results/ >> $GITHUB_STEP_SUMMARY
+          if [ -f results.txt ]; then
+            LIVE=$(grep -c "LIVE" results.txt || echo 0)
+            DIE=$(grep -c "DIE" results.txt || echo 0)
+            ERROR=$(grep -c "ERROR" results.txt || echo 0)
+            echo "**LIVE:** $LIVE" >> $GITHUB_STEP_SUMMARY
+            echo "**DIE:** $DIE" >> $GITHUB_STEP_SUMMARY
+            echo "**ERROR:** $ERROR" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**LIVE details:**" >> $GITHUB_STEP_SUMMARY
+            grep "LIVE" results.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "Nenhuma LIVE" >> $GITHUB_STEP_SUMMARY
           fi
