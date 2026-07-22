@@ -1,0 +1,85 @@
+name: Chk Runner
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_list:
+        description: 'Lista de targets (um por linha)'
+        required: true
+        type: string
+      threads:
+        description: 'Threads paralelas'
+        required: false
+        default: '50'
+        type: string
+
+jobs:
+  chk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-
+
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          # Se for Node.js: npm ci
+          # Se for Go: go mod download
+
+      - name: Prepare targets
+        run: |
+          echo "${{ github.event.inputs.target_list }}" > targets.txt
+          echo "Targets carregados: $(wc -l < targets.txt)"
+
+      - name: Run chk
+        env:
+          THREADS: ${{ github.event.inputs.threads }}
+        run: |
+          # ADAPTE ESTE COMANDO PARA SEU CHK
+          # Python:
+          python chk.py -t targets.txt -th $THREADS
+          # Node.js:
+          # node chk.js targets.txt $THREADS
+          # Go (compilado):
+          # ./chk -targets targets.txt -threads $THREADS
+          # Go (source):
+          # go run . -targets targets.txt -threads $THREADS
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: chk-results
+          path: |
+            results/
+            *.txt
+            *.json
+            *.csv
+          retention-days: 7
+
+      - name: Show summary
+        run: |
+          echo "## Chk Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Targets:** $(wc -l < targets.txt)" >> $GITHUB_STEP_SUMMARY
+          echo "**Threads:** ${{ github.event.inputs.threads }}" >> $GITHUB_STEP_SUMMARY
+          if [ -d results ]; then
+            echo "**Arquivos de resultado:**" >> $GITHUB_STEP_SUMMARY
+            ls -la results/ >> $GITHUB_STEP_SUMMARY
+          fi
